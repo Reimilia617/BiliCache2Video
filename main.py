@@ -116,7 +116,7 @@ def check_ffmpeg():
 
 
 def can_read_cache():
-    """实测能否读 B 站缓存目录。返回 (可读, 是否存在)"""
+    """普通用户视角：(可读, 普通用户视角下存在)"""
     p = Path(CACHE_ROOT)
     if not p.exists():
         return False, False
@@ -149,8 +149,9 @@ def check_output_writable():
 # ---------- 提权执行器 ----------
 def detect_privileged_executor():
     """返回可用执行器前缀：['su','-c'] / ['rish','-c'] / None"""
+    log("正在检测 root / rish（如弹出授权请点允许）…")
     try:
-        r = subprocess.run(["su", "-c", "id"], capture_output=True, text=True, timeout=20)
+        r = subprocess.run(["su", "-c", "id"], capture_output=True, text=True, timeout=30)
         if r.returncode == 0 and "uid=0" in r.stdout:
             return ["su", "-c"]
     except Exception:
@@ -167,6 +168,16 @@ def detect_privileged_executor():
             log("rish 已安装但调用异常，请先在 Termux 中运行一次 `rish` 完成初始化。")
 
     return None
+
+
+def path_exists_as_privileged(executor):
+    """用提权执行器检查缓存目录是否存在"""
+    cmd = f'test -e {shlex.quote(CACHE_ROOT)} && echo YES || echo NO'
+    try:
+        r = subprocess.run(executor + [cmd], capture_output=True, text=True, timeout=20)
+        return r.returncode == 0 and "YES" in r.stdout
+    except Exception:
+        return False
 
 
 # ---------- 临时目录清理 ----------
@@ -379,36 +390,44 @@ def action_merge():
     log("ffmpeg 已安装")
 
     readable, exists = can_read_cache()
-    if not exists:
-        log(f"缓存目录不存在：{CACHE_ROOT}")
-        log("请确认 B 站已下载过视频，或缓存路径是否被修改。")
-        return
 
-    # dry-run 且可直接读：跳过复制，直接扫描原目录
-    if DRY_RUN and readable:
-        log("dry-run：跳过缓存复制，直接扫描原目录。")
-        source_root = CACHE_ROOT
-    else:
-        if readable:
+    executor = None
+    if not exists or not readable:
+        executor = detect_privileged_executor()
+
+    if not exists:
+        if executor and path_exists_as_privileged(executor):
+            exists = True
+            log("普通用户不可见，但提权后确认缓存目录存在。")
+        else:
+            log(f"缓存目录不存在：{CACHE_ROOT}")
+            log("请确认 B 站已下载过视频，或缓存路径是否被修改。")
+            if executor is None:
+                log("（也未能检测到 root / rish，无法进一步确认）")
+            return
+
+    if readable:
+        if DRY_RUN:
+            log("dry-run：跳过缓存复制，直接扫描原目录。")
+            source_root = CACHE_ROOT
+        else:
             log("缓存目录可直接读取，开始复制…")
             if not copy_cache_direct():
                 return
-        else:
-            log("无法读取缓存目录。")
-            log("Android 11 及以上版本限制了对 Android/data 的访问。")
-            executor = detect_privileged_executor()
-            if executor is None:
-                log("未检测到可用的提权方式：")
-                log("  - 请授予 root 权限后重试，或")
-                log("  - 使用 rish（Shizuku）运行本脚本")
-                log("    rish 通过 Shizuku 以 shell 权限运行，可绕过该限制。")
-                return
-            who = "root" if executor[0] == "su" else "rish"
-            log(f"使用 {who} 权限复制缓存…")
-            if not copy_cache_with_executor(executor):
-                return
-
-        log("缓存已复制到临时目录")
+            source_root = TEMP_DIR
+    else:
+        log("无法直接读取缓存目录。")
+        log("Android 11 及以上版本限制了对 Android/data 的访问。")
+        if executor is None:
+            log("未检测到可用的提权方式：")
+            log("  - 请授予 root 权限后重试，或")
+            log("  - 使用 rish（Shizuku）运行本脚本")
+            log("    rish 通过 Shizuku 以 shell 权限运行，可绕过该限制。")
+            return
+        who = "root" if executor[0] == "su" else "rish"
+        log(f"使用 {who} 权限复制缓存…")
+        if not copy_cache_with_executor(executor):
+            return
         source_root = TEMP_DIR
 
     if not check_copied_cache(source_root):
@@ -458,7 +477,6 @@ def main():
             except Exception as e:
                 log(f"发生异常：{e}")
             finally:
-                # dry-run 未复制时不需要清理，但 clean_temp 幂等，安全
                 clean_temp()
         elif choice == "0":
             log("退出前清理临时目录…")
