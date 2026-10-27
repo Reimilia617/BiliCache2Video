@@ -23,7 +23,6 @@ object CacheScanner {
                         ?.optString("part", "")?.replace("/", "_")?.take(40) ?: ""
                     val title = if (part.isNotEmpty()) "${base}_$part" else base
 
-                    // 递归查找，优先 video.m4s，找不到再用 *.blv 兜底
                     val video = folder.walkTopDown()
                         .firstOrNull { it.name == "video.m4s" }
                         ?: folder.walkTopDown()

@@ -6,7 +6,7 @@
 
     <application
         android:allowBackup="true"
-        android:label="BiliMerge"
+        android:label="BiliCache2Video"
         android:theme="@style/Theme.Material3.DayNight.NoActionBar">
         <activity
             android:name=".MainActivity"

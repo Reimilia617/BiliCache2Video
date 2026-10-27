@@ -31,10 +31,12 @@ class MainActivity : ComponentActivity() {
     private fun requestAllFilesAccess() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             if (!Environment.isExternalStorageManager()) {
-                val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
-                    data = Uri.parse("package:$packageName")
-                }
-                startActivity(intent)
+                try {
+                    val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                        data = Uri.parse("package:$packageName")
+                    }
+                    startActivity(intent)
+                } catch (_: Exception) { }
             }
         }
     }
@@ -55,7 +57,7 @@ fun MergeScreen(activity: ComponentActivity) {
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text("BiliMerge", style = MaterialTheme.typography.headlineMedium)
+        Text("BiliCache2Video", style = MaterialTheme.typography.headlineMedium)
 
         OutlinedTextField(
             value = cachePath,
@@ -70,9 +72,13 @@ fun MergeScreen(activity: ComponentActivity) {
                 isRunning = true
                 logText = "开始处理…"
                 Thread {
-                    val tempRoot = activity.getExternalFilesDir(null)!!
-                    val result = doMerge(cachePath, tempRoot) { msg ->
-                        activity.runOnUiThread { logText += "\n$msg" }
+                    val result = try {
+                        val tempRoot = activity.getExternalFilesDir(null) ?: activity.filesDir
+                        doMerge(cachePath, tempRoot) { msg ->
+                            activity.runOnUiThread { logText += "\n$msg" }
+                        }
+                    } catch (e: Throwable) {
+                        "异常：${e.javaClass.simpleName}: ${e.message}"
                     }
                     activity.runOnUiThread {
                         logText += "\n$result"
@@ -99,10 +105,13 @@ private fun doMerge(cachePath: String, tempRoot: File, log: (String) -> Unit): S
     if (!PrivilegedShell.isRootAvailable()) return "Root 未授权"
     if (!PrivilegedShell.pathExists(cachePath)) return "路径不存在：$cachePath"
 
-    // App 私有外部目录，无需 MANAGE_EXTERNAL_STORAGE 即可读写
     val tempDir = File(tempRoot, "bili_merge_tmp")
-    if (tempDir.exists()) tempDir.deleteRecursively()
-    tempDir.mkdirs()
+    try {
+        if (tempDir.exists()) tempDir.deleteRecursively()
+        tempDir.mkdirs()
+    } catch (e: Exception) {
+        return "创建临时目录失败：${e.message}"
+    }
 
     log("Root 复制缓存…")
     if (!PrivilegedShell.copyDirectory(cachePath, tempDir.absolutePath)) {
@@ -110,14 +119,20 @@ private fun doMerge(cachePath: String, tempRoot: File, log: (String) -> Unit): S
     }
 
     log("扫描缓存…")
-    val tasks = CacheScanner.scan(tempDir)
-    if (tasks.isEmpty()) return "未找到有效缓存"
+    val tasks = try {
+        CacheScanner.scan(tempDir)
+    } catch (e: Exception) {
+        return "扫描异常：${e.message}"
+    }
+    if (tasks.isEmpty()) return "未找到有效缓存（临时目录：${tempDir.absolutePath}）"
 
     val outputDir = File(
         Environment.getExternalStorageDirectory(),
         "Movies/BiliMerge"
     )
-    outputDir.mkdirs()
+    try {
+        outputDir.mkdirs()
+    } catch (_: Exception) { }
     log("发现 ${tasks.size} 个任务，开始 FFmpeg 合并…")
 
     var success = 0
@@ -125,13 +140,17 @@ private fun doMerge(cachePath: String, tempRoot: File, log: (String) -> Unit): S
         val out = File(outputDir, "${task.title}.mp4")
         val cmd = "-i \"${task.videoPath}\" -i \"${task.audioPath}\" " +
                 "-map 0:v:0 -map 1:a:0 -c copy -y \"${out.absolutePath}\""
-        val session = FFmpegKit.execute(cmd)
-        if (ReturnCode.isSuccess(session.returnCode)) {
-            success++
-            log("[${i + 1}/${tasks.size}] 成功: ${task.title}")
-        } else {
-            log("[${i + 1}/${tasks.size}] 失败: ${task.title}")
-            out.delete()
+        try {
+            val session = FFmpegKit.execute(cmd)
+            if (ReturnCode.isSuccess(session.returnCode)) {
+                success++
+                log("[${i + 1}/${tasks.size}] 成功: ${task.title}")
+            } else {
+                log("[${i + 1}/${tasks.size}] 失败: ${task.title}")
+                out.delete()
+            }
+        } catch (e: Throwable) {
+            log("[${i + 1}/${tasks.size}] 异常: ${task.title} (${e.message})")
         }
     }
     return "完成：$success / ${tasks.size}，输出：${outputDir.absolutePath}"

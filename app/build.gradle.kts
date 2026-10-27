@@ -11,8 +11,8 @@ android {
         applicationId = "com.example.bilimerge"
         minSdk = 26
         targetSdk = 37
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 14
+        versionName = "Beta.261028.Patch14"
         ndk { abiFilters += listOf("arm64-v8a") }
     }
     buildTypes {
