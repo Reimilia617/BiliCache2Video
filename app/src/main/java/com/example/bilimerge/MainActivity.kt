@@ -1,6 +1,11 @@
 package com.example.bilimerge
 
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.Environment
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
@@ -19,7 +24,19 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         PrivilegedShell.init()
+        requestAllFilesAccess()
         setContent { MiuixTheme { MergeScreen(this) } }
+    }
+
+    private fun requestAllFilesAccess() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (!Environment.isExternalStorageManager()) {
+                val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                    data = Uri.parse("package:$packageName")
+                }
+                startActivity(intent)
+            }
+        }
     }
 }
 
@@ -53,7 +70,8 @@ fun MergeScreen(activity: ComponentActivity) {
                 isRunning = true
                 logText = "开始处理…"
                 Thread {
-                    val result = doMerge(cachePath) { msg ->
+                    val tempRoot = activity.getExternalFilesDir(null)!!
+                    val result = doMerge(cachePath, tempRoot) { msg ->
                         activity.runOnUiThread { logText += "\n$msg" }
                     }
                     activity.runOnUiThread {
@@ -77,14 +95,12 @@ fun MergeScreen(activity: ComponentActivity) {
     }
 }
 
-private fun doMerge(cachePath: String, log: (String) -> Unit): String {
+private fun doMerge(cachePath: String, tempRoot: File, log: (String) -> Unit): String {
     if (!PrivilegedShell.isRootAvailable()) return "Root 未授权"
     if (!PrivilegedShell.pathExists(cachePath)) return "路径不存在：$cachePath"
 
-    val tempDir = File(
-        android.os.Environment.getExternalStorageDirectory(),
-        "bili_merge_tmp"
-    )
+    // App 私有外部目录，无需 MANAGE_EXTERNAL_STORAGE 即可读写
+    val tempDir = File(tempRoot, "bili_merge_tmp")
     if (tempDir.exists()) tempDir.deleteRecursively()
     tempDir.mkdirs()
 
@@ -98,7 +114,7 @@ private fun doMerge(cachePath: String, log: (String) -> Unit): String {
     if (tasks.isEmpty()) return "未找到有效缓存"
 
     val outputDir = File(
-        android.os.Environment.getExternalStorageDirectory(),
+        Environment.getExternalStorageDirectory(),
         "Movies/BiliMerge"
     )
     outputDir.mkdirs()

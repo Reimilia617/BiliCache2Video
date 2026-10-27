@@ -22,8 +22,15 @@ object CacheScanner {
                     val part = meta.optJSONObject("page_data")
                         ?.optString("part", "")?.replace("/", "_")?.take(40) ?: ""
                     val title = if (part.isNotEmpty()) "${base}_$part" else base
-                    val video = folder.walkTopDown().firstOrNull { it.name == "video.m4s" }
-                    val audio = folder.walkTopDown().firstOrNull { it.name == "audio.m4s" }
+
+                    // 递归查找，优先 video.m4s，找不到再用 *.blv 兜底
+                    val video = folder.walkTopDown()
+                        .firstOrNull { it.name == "video.m4s" }
+                        ?: folder.walkTopDown()
+                            .firstOrNull { it.extension == "blv" }
+                    val audio = folder.walkTopDown()
+                        .firstOrNull { it.name == "audio.m4s" }
+
                     if (video != null && audio != null) {
                         tasks.add(MergeTask(title, video.absolutePath, audio.absolutePath))
                     }
