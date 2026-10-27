@@ -32,6 +32,9 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.material3:material3")
 
+    // 解决 AndroidManifest 中 Theme.Material3.DayNight.NoActionBar 的资源链接
+    implementation("com.google.android.material:material:1.14.0")
+
     // Miuix 核心 UI，Android 变体
     implementation("top.yukonga.miuix.kmp:miuix-ui-android:0.9.1")
 
