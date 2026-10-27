@@ -1,6 +1,4 @@
 plugins {
     id("com.android.application") version "9.4.0" apply false
-    id("org.jetbrains.kotlin.android") version "2.1.0" apply false
     id("org.jetbrains.kotlin.plugin.compose") version "2.1.0" apply false
-    id("com.chaquo.python") version "16.0.0" apply false
 }

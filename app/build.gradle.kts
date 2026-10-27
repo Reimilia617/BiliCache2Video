@@ -1,8 +1,6 @@
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
-    id("com.chaquo.python")
 }
 
 android {
@@ -24,13 +22,12 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true }
 }
 
-chaquopy {
-    defaultConfig {
-        version = "3.10"
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
     }
 }
 
@@ -44,7 +41,7 @@ dependencies {
     // Miuix 核心 UI，Android 变体
     implementation("top.yukonga.miuix.kmp:miuix-ui-android:0.9.1")
 
-    // FFmpegKit 维护版，包名 API 不变，只换 groupId [citation:1][citation:7]
+    // FFmpegKit 维护版，包名 API 不变，只换 groupId
     implementation("dev.ffmpegkit-maintained:ffmpeg-kit-full:8.1.7")
 
     // libsu root shell

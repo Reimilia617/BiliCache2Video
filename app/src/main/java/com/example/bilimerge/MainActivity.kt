@@ -12,7 +12,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.arthenica.ffmpegkit.FFmpegKit
 import com.arthenica.ffmpegkit.ReturnCode
-import com.chaquo.python.Python
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import java.io.File
 
@@ -33,10 +32,14 @@ fun MergeScreen() {
     var isRunning by remember { mutableStateOf(false) }
 
     Column(
-        modifier = Modifier.fillMaxSize().padding(24.dp).verticalScroll(rememberScrollState()),
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp)
+            .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Text("BiliMerge", style = MaterialTheme.typography.headlineMedium)
+
         OutlinedTextField(
             value = cachePath,
             onValueChange = { cachePath = it },
@@ -44,20 +47,33 @@ fun MergeScreen() {
             modifier = Modifier.fillMaxWidth(),
             enabled = !isRunning
         )
+
         Button(
             onClick = {
                 isRunning = true
                 logText = "开始处理…"
                 Thread {
-                    val result = doMerge(cachePath) { msg -> runOnUiThread { logText += "\n$msg" } }
-                    runOnUiThread { logText += "\n$result"; isRunning = false }
+                    val result = doMerge(cachePath) { msg ->
+                        runOnUiThread { logText += "\n$msg" }
+                    }
+                    runOnUiThread {
+                        logText += "\n$result"
+                        isRunning = false
+                    }
                 }.start()
             },
             enabled = !isRunning,
             modifier = Modifier.fillMaxWidth()
-        ) { Text(if (isRunning) "处理中…" else "扫描并合并") }
+        ) {
+            Text(if (isRunning) "处理中…" else "扫描并合并")
+        }
+
         Text("日志", style = MaterialTheme.typography.titleMedium)
-        Text(logText, style = MaterialTheme.typography.bodySmall, modifier = Modifier.fillMaxWidth())
+        Text(
+            text = logText,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.fillMaxWidth()
+        )
     }
 }
 
@@ -65,7 +81,10 @@ private fun doMerge(cachePath: String, log: (String) -> Unit): String {
     if (!PrivilegedShell.isRootAvailable()) return "Root 未授权"
     if (!PrivilegedShell.pathExists(cachePath)) return "路径不存在：$cachePath"
 
-    val tempDir = File(cacheDir, "bili_tmp")
+    val tempDir = File(
+        android.os.Environment.getExternalStorageDirectory(),
+        "bili_merge_tmp"
+    )
     if (tempDir.exists()) tempDir.deleteRecursively()
     tempDir.mkdirs()
 
@@ -74,29 +93,28 @@ private fun doMerge(cachePath: String, log: (String) -> Unit): String {
         return "复制失败，请确认 Root 授权"
     }
 
-    log("Python 扫描…")
-    val py = Python.getInstance()
-    val result = py.getModule("scanner").callAttr("scan_cache", tempDir.absolutePath)
-    val tasks = result.asList().map { row ->
-        val a = row.asList()
-        Triple(a[0].toString(), a[1].toString(), a[2].toString())
-    }
+    log("扫描缓存…")
+    val tasks = CacheScanner.scan(tempDir)
     if (tasks.isEmpty()) return "未找到有效缓存"
 
-    val outputDir = File("/storage/emulated/0/Movies/BiliMerge")
+    val outputDir = File(
+        android.os.Environment.getExternalStorageDirectory(),
+        "Movies/BiliMerge"
+    )
     outputDir.mkdirs()
     log("发现 ${tasks.size} 个任务，开始 FFmpeg 合并…")
 
     var success = 0
-    tasks.forEachIndexed { i, (title, video, audio) ->
-        val out = File(outputDir, "$title.mp4")
-        val cmd = "-i \"$video\" -i \"$audio\" -map 0:v:0 -map 1:a:0 -c copy -y \"${out.absolutePath}\""
+    tasks.forEachIndexed { i, task ->
+        val out = File(outputDir, "${task.title}.mp4")
+        val cmd = "-i \"${task.videoPath}\" -i \"${task.audioPath}\" " +
+                "-map 0:v:0 -map 1:a:0 -c copy -y \"${out.absolutePath}\""
         val session = FFmpegKit.execute(cmd)
         if (ReturnCode.isSuccess(session.returnCode)) {
             success++
-            log("[${i+1}/${tasks.size}] 成功: $title")
+            log("[${i + 1}/${tasks.size}] 成功: ${task.title}")
         } else {
-            log("[${i+1}/${tasks.size}] 失败: $title")
+            log("[${i + 1}/${tasks.size}] 失败: ${task.title}")
             out.delete()
         }
     }
